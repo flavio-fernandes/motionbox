@@ -1,17 +1,22 @@
 #include "common.h"
 
-static const byte motionPin = 16;  /* brown wire */
+static const byte motionPin = A0;  /* purple wire */
+static const int motionPinThreshold = 999;  /* analog reads 1024 when in motion */
 
 void initMotionSensor() {
     pinMode(motionPin, INPUT);
     updateMotionTick1Sec();  // initial
 }
 
+// https://www.teachmemicro.com/pir-sensor-nodemcu-esp8266/
+// https://www.teachmemicro.com/pir-motion-sensor/
 void updateMotionTick1Sec() {
     static int initializationCountdown = 11;
+    const int motionPinValue = analogRead(motionPin);
     const bool currMotionDetected =
         state.overrideMotionPinCountdownSeconds > 0 ||
-        (!getDisableMotionSensor() && digitalRead(motionPin) == HIGH);
+        (!getDisableMotionSensor() && motionPinValue >= motionPinThreshold);
+    const bool sameState = getMotionSensorState() == currMotionDetected;
 
     if (state.overrideMotionPinCountdownSeconds > 0) {
         --state.overrideMotionPinCountdownSeconds;
@@ -33,10 +38,23 @@ void updateMotionTick1Sec() {
         return;
     }
 
+#ifdef DEBUG
+    static int extraBump = 0;
+    if (!sameState) extraBump = 0;
+    if (!sameState || currMotionDetected || extraBump < 2) {
+      Serial.print("Motion state: "); Serial.print(getMotionSensorState() ? "y" : "n");
+      Serial.print(" currMotionDetected: "); Serial.print(currMotionDetected ? "y" : "n");
+      Serial.print(" motionPinValue: "); Serial.print(motionPinValue);
+      Serial.print(" extraBump: "); Serial.print(extraBump);
+      Serial.println("");
+    }
+    ++extraBump;
+#endif
+
     // Note: NOT using getMotionSensorOperState(), to keep bit set to what we need.
     //       Factoring getDisableMotionSensor() in is already taken care when 
     //       currMotionDetected is intantiated.
-    if (getMotionSensorState() == currMotionDetected) {
+    if (sameState) {
         if (++state.motionInfo.lastChangedSec > 59) {
             state.motionInfo.lastChangedSec = 0;
             if (++state.motionInfo.lastChangedMin > 59) {
